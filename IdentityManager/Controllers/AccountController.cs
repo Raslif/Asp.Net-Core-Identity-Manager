@@ -39,19 +39,22 @@ namespace IdentityManager.Controllers
                 return View(model);
             }
 
-            var result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: false);
+            var result = await _signInManager.PasswordSignInAsync(model.Email, model.Password, model.RememberMe, lockoutOnFailure: true);
             if (result.Succeeded)
                 return LocalRedirect(returnUrl);
+
+            if(result.IsLockedOut)
+            {
+                ModelState.AddModelError(string.Empty, "Your account is Locked-out. Try after sometime...");
+                return View(model);
+            }
 
             ModelState.AddModelError(string.Empty, "Invalid Login attempt.");
             return View(model);
         }
 
         [HttpGet]
-        public IActionResult Register()
-        {
-            return View(new RegisterViewModel());
-        }
+        public IActionResult Register() => View(new RegisterViewModel());
 
         [HttpPost]
         [ValidateAntiForgeryToken]
