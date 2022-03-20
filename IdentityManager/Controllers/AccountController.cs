@@ -13,17 +13,14 @@ namespace IdentityManager.Controllers
         private readonly SignInManager<IdentityUser> _signInManager = null;
         private readonly IEmailSender _emailSender = null;
         public AccountController(UserManager<IdentityUser> userManager, SignInManager<IdentityUser> signInManager,
-                                IEmailSender emailSender)
+                                 IEmailSender emailSender)
         {
             _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
             _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
             _emailSender = emailSender ?? throw new ArgumentNullException(nameof(emailSender));
         }
-        public IActionResult Index()
-        {
-            return View();
-        }
-
+        public IActionResult Index() => View();
+       
         [HttpGet]
         public IActionResult Login(string returnUrl = null)
         {
@@ -40,6 +37,19 @@ namespace IdentityManager.Controllers
             if (!ModelState.IsValid)
             {
                 ModelState.AddModelError(string.Empty, "Error Occured in Input.");
+                return View(model);
+            }
+
+            var user = await _userManager.FindByEmailAsync(model.Email);
+            if(user == null || (user != null && !await _userManager.CheckPasswordAsync(user, model.Password)))
+            {
+                ModelState.AddModelError(string.Empty, "You are not available in the system. Please register.");
+                return View(model);
+            }
+
+            if (!await _userManager.IsEmailConfirmedAsync(user))
+            {
+                ModelState.AddModelError(string.Empty, "Please confirm the Email.");
                 return View(model);
             }
 
@@ -74,14 +84,33 @@ namespace IdentityManager.Controllers
             var result = await _userManager.CreateAsync(user, model.Password);
             if (result.Succeeded)
             {
-                await _signInManager.SignInAsync(user, isPersistent: false);
-                return RedirectToAction("Index", "Home");
+                var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+                var callBackUrl = Url.Action(nameof(AccountController.ConfirmEmail), "Account", new { userId = user.Id, code = token }
+                                             , protocol: HttpContext.Request.Scheme);
+
+                await _emailSender.SendEmailAsync(model.Email, "Confirm Email - Identity Manager",
+                                        "Please verify your email by clicking here: <a href=" + callBackUrl + ">link</a>");
+
+                return View("RegistrationConfirmation");
             }
 
             foreach (var error in result.Errors)
                 ModelState.AddModelError(string.Empty, error.Description);
 
             return View(model);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> ConfirmEmail(string userId, string code)
+        {
+            if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(code))
+                return View("Error");
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null) return View("Error");
+
+            var result = await _userManager.ConfirmEmailAsync(user, code);
+            return View(result.Succeeded ? "ConfirmEmail" : "Error");
         }
 
         [HttpGet]
