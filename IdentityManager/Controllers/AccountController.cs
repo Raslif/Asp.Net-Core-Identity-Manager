@@ -3,7 +3,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace IdentityManager.Controllers
@@ -12,18 +15,20 @@ namespace IdentityManager.Controllers
     public class AccountController : Controller
     {
         private readonly UserManager<IdentityUser> _userManager = null;
+        private readonly RoleManager<IdentityRole> _roleManager = null;
         private readonly SignInManager<IdentityUser> _signInManager = null;
         private readonly IEmailSender _emailSender = null;
         public AccountController(UserManager<IdentityUser> userManager, SignInManager<IdentityUser> signInManager,
-                                 IEmailSender emailSender)
+                                 IEmailSender emailSender, RoleManager<IdentityRole> roleManager)
         {
             _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+            _roleManager = roleManager ?? throw new ArgumentNullException(nameof(roleManager));
             _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
             _emailSender = emailSender ?? throw new ArgumentNullException(nameof(emailSender));
         }
 
         public IActionResult Index() => View();
-       
+
         [HttpGet]
         [AllowAnonymous]
         public IActionResult Login(string returnUrl = null)
@@ -38,7 +43,7 @@ namespace IdentityManager.Controllers
         public async Task<IActionResult> Login(LoginViewModel model, string returnUrl = null)
         {
             ViewData["ReturnUrl"] = returnUrl;
-            returnUrl ??= Url.Content("~/");
+            returnUrl ??= Url.Content("~/Home/Index");
             if (!ModelState.IsValid)
             {
                 ModelState.AddModelError(string.Empty, "Error Occured in Input.");
@@ -46,7 +51,7 @@ namespace IdentityManager.Controllers
             }
 
             var user = await _userManager.FindByEmailAsync(model.Email);
-            if(user == null || (user != null && !await _userManager.CheckPasswordAsync(user, model.Password)))
+            if (user == null || (user != null && !await _userManager.CheckPasswordAsync(user, model.Password)))
             {
                 ModelState.AddModelError(string.Empty, "You are not available in the system. Please register.");
                 return View(model);
@@ -74,7 +79,16 @@ namespace IdentityManager.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public IActionResult Register() => View(new RegisterViewModel());
+        public async Task<IActionResult> Register()
+        {
+            if (!await _roleManager.RoleExistsAsync("Admin"))
+            {
+                await _roleManager.CreateAsync(new IdentityRole("Admin"));
+                await _roleManager.CreateAsync(new IdentityRole("User"));
+            }
+
+            return View(new RegisterViewModel { RoleList = GetListOfRoles() });
+        }
 
         [HttpPost]
         [AllowAnonymous]
@@ -91,6 +105,10 @@ namespace IdentityManager.Controllers
             var result = await _userManager.CreateAsync(user, model.Password);
             if (result.Succeeded)
             {
+                string role = (!string.IsNullOrWhiteSpace(model.SelectedRole) && model.SelectedRole.ToLower() == "admin")
+                                        ? model.SelectedRole : "User";
+                await _userManager.AddToRoleAsync(user, role);
+
                 var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
                 var callBackUrl = Url.Action(nameof(AccountController.ConfirmEmail), "Account", new { userId = user.Id, code = token }
                                              , protocol: HttpContext.Request.Scheme);
@@ -104,6 +122,7 @@ namespace IdentityManager.Controllers
             foreach (var error in result.Errors)
                 ModelState.AddModelError(string.Empty, error.Description);
 
+            model.RoleList = GetListOfRoles();
             return View(model);
         }
 
@@ -213,6 +232,27 @@ namespace IdentityManager.Controllers
         {
             await _signInManager.SignOutAsync();
             return RedirectToAction(nameof(HomeController.Index), "Home");
+        }
+
+        private List<SelectListItem> GetListOfRoles()
+        {
+            var listOfRoles = _roleManager.Roles.ToList();
+            var roleSelectList = new List<SelectListItem>();
+
+            if (listOfRoles.Count > 0)
+            {
+                var roles = listOfRoles.Select(x => x.Name).ToList();
+                foreach (var item in roles)
+                {
+                    roleSelectList.Add(new SelectListItem
+                    {
+                        Value = item,
+                        Text = item
+                    });
+                }
+            }
+
+            return roleSelectList;
         }
     }
 }
