@@ -28,7 +28,7 @@ namespace IdentityManager.Services
              new JObject {
               {
                "From", new JObject {
-                    {"Email", "rasutech@protonmail.com"},
+                    {"Email", "your-email"},
                     {"Name", "Rasu"}
                }}, 
                  {
